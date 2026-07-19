@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>纯音听阈科普体验</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 400px;
+      width: 100%;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      padding: 30px 20px;
+      text-align: center;
+    }
+    h1 { font-size: 24px; color: #333; margin-bottom: 5px; }
+    .subtitle { font-size: 14px; color: #888; margin-bottom: 20px; }
+    .warning {
+      background: #fff3cd;
+      color: #856404;
+      padding: 10px;
+      border-radius: 10px;
+      font-size: 12px;
+      margin-bottom: 20px;
+      text-align: left;
+    }
+    .status-box {
+      background: #f0f2f5;
+      border-radius: 15px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+    .status-box p { margin: 5px 0; font-size: 16px; }
+    .buttons { display: flex; justify-content: space-around; margin-bottom: 20px; }
+    .btn {
+      padding: 15px 25px;
+      border: none;
+      border-radius: 50px;
+      font-size: 18px;
+      font-weight: bold;
+      color: white;
+      width: 45%;
+      transition: opacity 0.2s;
+    }
+    .btn-hear { background: #07c160; }
+    .btn-no-hear { background: #fa5151; }
+    .btn:active { opacity: 0.7; }
+    .btn:disabled { background: #ccc; }
+    .start-btn {
+      background: #1989fa;
+      color: white;
+      padding: 15px 40px;
+      border: none;
+      border-radius: 50px;
+      font-size: 18px;
+      margin-top: 10px;
+    }
+    canvas { width: 100%; height: 280px; margin-top: 20px; border: 1px solid #eee; border-radius: 10px; }
+    .disclaimer { font-size: 11px; color: #aaa; margin-top: 15px; }
+
+    .grade-table {
+      width: 100%;
+      margin-top: 20px;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: center;
+    }
+    .grade-table th {
+      background: #f0f2f5;
+      padding: 8px 4px;
+      border: 1px solid #ddd;
+    }
+    .grade-table td {
+      padding: 6px 4px;
+      border: 1px solid #ddd;
+    }
+    .grade-note {
+      font-size: 11px;
+      color: #888;
+      margin-top: 8px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>👂 纯音听阈科普体验</h1>
+  <div class="subtitle">戴上耳机，音量调到最大，安静环境</div>
+  <div class="warning">
+    ⚠️ 本工具仅供科普体验，结果不能作为医学诊断。<br>如有听力问题请及时就医。
+  </div>
+
+  <div class="status-box" id="statusBox" style="display: none;">
+    <p>当前频率：<strong><span id="freqText">--</span> Hz</strong></p>
+    <p>当前响度等级：<strong><span id="levelText">--</span> / 100</strong></p>
+  </div>
+
+  <div class="buttons" id="testButtons" style="display: none;">
+    <button class="btn btn-hear" id="hearBtn" disabled>我听到了</button>
+    <button class="btn btn-no-hear" id="noHearBtn" disabled>没听到</button>
+  </div>
+
+  <button class="start-btn" id="startBtn">开始测试</button>
+
+  <canvas id="audiogram" width="350" height="280" style="display: none;"></canvas>
+
+  <div id="gradeTableContainer" style="display: none;">
+    <table class="grade-table">
+      <tr>
+        <th>听力分级</th>
+        <th>响度等级（dB）</th>
+        <th>通俗理解</th>
+      </tr>
+      <tr>
+        <td>正常听力</td>
+        <td>0 ~ 25</td>
+        <td>可以听到很小的声音</td>
+      </tr>
+      <tr>
+        <td>轻度听力损失</td>
+        <td>26 ~ 40</td>
+        <td>听悄悄话有点困难</td>
+      </tr>
+      <tr>
+        <td>中度听力损失</td>
+        <td>41 ~ 60</td>
+        <td>经常需要对方重复</td>
+      </tr>
+      <tr>
+        <td>重度听力损失</td>
+        <td>61 ~ 80</td>
+        <td>必须大声说话才听到</td>
+      </tr>
+      <tr>
+        <td>极重度听力损失</td>
+        <td>&gt; 80</td>
+        <td>几乎听不到言语声</td>
+      </tr>
+    </table>
+    <div class="grade-note">
+      ※ 以上分级仅对应本测试的“响度等级”，非医院听力级分贝(dB HL)。结果仅供科普参考，不能用于诊断。
+    </div>
+  </div>
+
+  <div class="disclaimer">结果仅供科普，不能用于诊断</div>
+</div>
+
+<script>
+  // ==================== 主程序 ====================
+  // 测试顺序保持不变
+  const freqList = [1000, 2000, 4000, 8000, 500, 250];
+  // 听力图横轴频率（升序）
+  const displayFreqList = [250, 500, 1000, 2000, 4000, 8000];
+
+  let state = {
+    testing: false,
+    freqIndex: 0,
+    currentLevel: 30,
+    direction: 'up',
+    measureCount: 0,
+    heard: false,
+    thresholds: {},
+    maxLevel: 100,
+    minLevel: 0,
+    stepUp: 20,
+    stepDown: 10,
+    audioCtx: null,
+    currentOsc: null,
+    currentGain: null,
+    canRespond: false,
+  };
+
+  const freqText = document.getElementById('freqText');
+  const levelText = document.getElementById('levelText');
+  const statusBox = document.getElementById('statusBox');
+  const testButtons = document.getElementById('testButtons');
+  const hearBtn = document.getElementById('hearBtn');
+  const noHearBtn = document.getElementById('noHearBtn');
+  const startBtn = document.getElementById('startBtn');
+  const canvas = document.getElementById('audiogram');
+  const gradeTableContainer = document.getElementById('gradeTableContainer');
+
+  startBtn.addEventListener('click', () => {
+    startBtn.style.display = 'none';
+    statusBox.style.display = 'block';
+    testButtons.style.display = 'flex';
+    canvas.style.display = 'none';
+    gradeTableContainer.style.display = 'none';
+    if (!state.audioCtx) {
+      state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    state.testing = true;
+    state.freqIndex = 0;
+    state.currentLevel = 30;
+    state.direction = 'up';
+    state.measureCount = 0;
+    state.heard = false;
+    state.thresholds = {};
+    updateFreqText();
+    playCurrentTone();
+  });
+
+  hearBtn.addEventListener('click', () => {
+    if (!state.testing || !state.canRespond) return;
+    state.heard = true;
+    processResponse(true);
+  });
+
+  noHearBtn.addEventListener('click', () => {
+    if (!state.testing || !state.canRespond) return;
+    state.heard = false;
+    processResponse(false);
+  });
+
+  function updateFreqText() {
+    freqText.textContent = freqList[state.freqIndex];
+    levelText.textContent = state.currentLevel;
+  }
+
+  function playCurrentTone() {
+    stopTone();
+    if (!state.testing) return;
+
+    const freq = freqList[state.freqIndex];
+    const level = state.currentLevel;
+    let gainValue = level / 200;
+    if (gainValue > 0.5) gainValue = 0.5;
+
+    const ctx = state.audioCtx;
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.value = freq;
+    gainNode.gain.value = gainValue;
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    oscillator.start();
+    state.currentOsc = oscillator;
+    state.currentGain = gainNode;
+
+    hearBtn.disabled = true;
+    noHearBtn.disabled = true;
+    state.canRespond = false;
+
+    setTimeout(() => {
+      stopTone();
+      hearBtn.disabled = false;
+      noHearBtn.disabled = false;
+      state.canRespond = true;
+    }, 1500);
+  }
+
+  function stopTone() {
+    if (state.currentOsc) {
+      state.currentOsc.stop();
+      state.currentOsc.disconnect();
+      state.currentOsc = null;
+    }
+    if (state.currentGain) {
+      state.currentGain.disconnect();
+      state.currentGain = null;
+    }
+  }
+
+  function processResponse(heard) {
+    if (!state.testing) return;
+    let newLevel = state.currentLevel;
+    let newDirection = state.direction;
+    let measureCount = state.measureCount;
+
+    if (heard) {
+      if (state.direction === 'up') {
+        newDirection = 'down';
+        measureCount++;
+      }
+      newLevel = Math.max(state.minLevel, newLevel - state.stepDown);
+    } else {
+      if (state.direction === 'down') {
+        newDirection = 'up';
+        measureCount++;
+      }
+      newLevel = Math.min(state.maxLevel, newLevel + state.stepUp);
+    }
+
+    state.currentLevel = newLevel;
+    state.direction = newDirection;
+    state.measureCount = measureCount;
+    updateFreqText();
+
+    if (measureCount >= 3 || (heard && newLevel <= state.minLevel)) {
+      let threshold = state.currentLevel;
+      if (!state.heard && state.currentLevel >= state.maxLevel) {
+        threshold = '>100';
+      } else if (!state.heard) {
+        threshold = state.currentLevel + state.stepUp;
+      }
+      state.thresholds[freqList[state.freqIndex]] = threshold;
+
+      if (state.freqIndex < freqList.length - 1) {
+        state.freqIndex++;
+        state.currentLevel = 30;
+        state.direction = 'up';
+        state.measureCount = 0;
+        state.heard = false;
+        updateFreqText();
+        playCurrentTone();
+      } else {
+        finishTest();
+      }
+    } else {
+      playCurrentTone();
+    }
+  }
+
+  function finishTest() {
+    state.testing = false;
+    stopTone();
+    statusBox.style.display = 'none';
+    testButtons.style.display = 'none';
+    hearBtn.disabled = true;
+    noHearBtn.disabled = true;
+    drawAudiogram();
+    canvas.style.display = 'block';
+    gradeTableContainer.style.display = 'block';
+    startBtn.style.display = 'inline-block';
+    startBtn.textContent = '重新测试';
+  }
+
+  function drawAudiogram() {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // 按升序显示的标签
+    const freqLabels = ['250 Hz', '500 Hz', '1k Hz', '2k Hz', '4k Hz', '8k Hz'];
+    const stepX = w / (freqLabels.length + 1);
+
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 0.5;
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#333';
+
+    // 画竖线及标签
+    for (let i = 0; i < freqLabels.length; i++) {
+      const x = (i + 1) * stepX;
+      ctx.beginPath();
+      ctx.moveTo(x, 20);
+      ctx.lineTo(x, h - 30);
+      ctx.stroke();
+      ctx.fillText(freqLabels[i], x - 15, h - 12);
+    }
+
+    // 画横线及纵轴标签（dB）
+    for (let lev = 0; lev <= 100; lev += 20) {
+      const y = 20 + (h - 50) * (lev / 100);
+      ctx.beginPath();
+      ctx.moveTo(stepX, y);
+      ctx.lineTo(w - stepX, y);
+      ctx.stroke();
+      ctx.fillText(lev + ' dB', 5, y + 3);
+    }
+
+    // 画阈值折线 —— 使用 displayFreqList 的顺序
+    ctx.beginPath();
+    ctx.strokeStyle = '#e74c3c';
+    ctx.lineWidth = 2;
+    let firstPoint = true;
+    for (let i = 0; i < displayFreqList.length; i++) {
+      const freq = displayFreqList[i];
+      let thres = state.thresholds[freq];
+      if (thres === undefined) continue;
+      if (typeof thres === 'string') thres = 105;
+      const x = (i + 1) * stepX;
+      const y = 20 + (h - 50) * (thres / 100);
+      if (firstPoint) {
+        ctx.moveTo(x, y);
+        firstPoint = false;
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+
+    // 画数据点
+    ctx.fillStyle = '#e74c3c';
+    for (let i = 0; i < displayFreqList.length; i++) {
+      const freq = displayFreqList[i];
+      let thres = state.thresholds[freq];
+      if (thres === undefined) continue;
+      if (typeof thres === 'string') thres = 105;
+      const x = (i + 1) * stepX;
+      const y = 20 + (h - 50) * (thres / 100);
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+</script>
+</body>
+</html>
